@@ -1,0 +1,18 @@
+Business scenarios:
+
+1. Add a product
+We want people to be able to add a product along side some pictures of the product.
+The product should also have some details like a description and a price.
+After this we should be able to see the product in the list of all products.
+
+2. See all products
+Here we should have the option see all products and search through them.
+When searching we should be able to see only the products that match the search criteria.
+
+3. See product details
+When clicking on a product we should see all the details that were entered along with the option to buy one.
+
+
+Technical details:
+Implement an API that communicates with the database using FastAPI
+Implement a Web App that communicates with the API using Dash.
