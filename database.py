@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+
 # 1. Load environment variables from the .env file
 load_dotenv()
 
@@ -32,3 +33,13 @@ class Product(Base):
 # 5. Function to initialize the database
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+
+# 2. Modelul User
+class User(Base):
+    __tablename__ = "users"
+
+    user_id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True)
+    password = Column(String(255))
+    role = Column(String(50))
