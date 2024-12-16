@@ -2,7 +2,7 @@ import base64
 import dash
 from dash import dcc, html, Input, Output, State
 import requests
-from navbar import create_navbar  # Importă funcția din navbar.py
+from navbar import create_navbar
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
@@ -12,25 +12,28 @@ API_BASE_URL = "http://127.0.0.1:8000"  # FastAPI endpoint
 # Layout
 app.layout = html.Div([
 
-    # Navbar Section (importat din navbar.py)
-    create_navbar(),  # Adăugăm navbar-ul în layout-ul aplicației
+    # Navbar Section (imported from navbar.py)
+    create_navbar(),
 
     # Header
     html.H1("Product Management Dashboard", className="header"),
 
-    # Form Login
+    # Store the authentication status
+    dcc.Store(id="auth-store", storage_type="session"),
+
+    # Form Login (hidden after login)
     html.Div([ 
         html.H2("Login", className="section-header"),
         html.Label("Username:", className="form-label"),
-        dcc.Input(id="login-username", type="text", className="input-field", placeholder="Enter username", value=""),  # Added value=""
+        dcc.Input(id="login-username", type="text", className="input-field", placeholder="Enter username", value=""),
         html.Label("Password:", className="form-label"),
-        dcc.Input(id="login-password", type="password", className="input-field", placeholder="Enter password", value=""),  # Added value=""
+        dcc.Input(id="login-password", type="password", className="input-field", placeholder="Enter password", value=""),
         html.Button("Login", id="login-button", n_clicks=0, className="btn"),
         html.Div(id="login-message", className="message-container")
-    ], className="form-section"),
+    ], id="login-form", className="form-section"),
 
-    # Form Section for adding product (hidden initially)
-    html.Div(id="product-form", children=[
+    # Form Section for adding product (hidden until login is successful)
+    html.Div(id="product-form-section", children=[ 
         html.Label("Product Name:", className="form-label"),
         dcc.Input(id="product-name", type="text", value="", className="input-field", placeholder="Enter product name"),
 
@@ -56,29 +59,61 @@ app.layout = html.Div([
     dcc.Interval(id="hide-message", interval=3000, n_intervals=0),
 ])
 
-# Callback for login
+
+# Combined callback for login and logout actions
 @app.callback(
-    Output("login-message", "children"),
-    Output("product-form", "style"),
-    Input("login-button", "n_clicks"),
-    [State("login-username", "value"), State("login-password", "value")]
+    [
+        Output("login-message", "children"),
+        Output("product-form-section", "style"),
+        Output("login-form", "style"),
+        Output("auth-store", "data")
+    ],
+    [
+        Input("login-button", "n_clicks"),
+        Input("logout-button", "n_clicks"),
+    ],
+    [
+        State("login-username", "value"),
+        State("login-password", "value"),
+        State("auth-store", "data"),
+    ]
 )
-def login_user(n_clicks, username, password):
-    if n_clicks > 0:
+def manage_login_logout(login_clicks, logout_clicks, username, password, auth_data):
+    # Ensure clicks are integers (defaulting to 0 if None)
+    login_clicks = login_clicks or 0
+    logout_clicks = logout_clicks or 0
+
+    # Check which button was clicked
+    triggered_id = dash.callback_context.triggered_id
+    
+    # Logic for login
+    if triggered_id == "login-button" and login_clicks > 0:
+        if not username or not password:
+            return html.Div("Please enter both username and password.", className="error-message"), {'display': 'none'}, {'display': 'block'}, None
+        
         try:
             response = requests.post(f"{API_BASE_URL}/login/", data={"username": username, "password": password})
             if response.status_code == 200:
-                # Extract user_id from the response
+                # Successful login
                 user_data = response.json()
-                user_id = user_data.get("user_id")  # This is the user_id sent from the backend
-                
-                # Optionally, you could store the user_id in a session or token
-                return html.Div(f"Login successful! User ID: {user_id}", className="success-message"), {'display': 'block'}
+                user_id = user_data.get("user_id")
+                return html.Div(f"Login successful! User ID: {user_id}", className="success-message"), {'display': 'block'}, {'display': 'none'}, {"user_id": user_id}
             else:
-                return html.Div("Invalid username or password.", className="error-message"), {'display': 'none'}
+                return html.Div("Invalid username or password.", className="error-message"), {'display': 'none'}, {'display': 'block'}, None
         except requests.exceptions.RequestException as e:
-            return html.Div(f"Error connecting to server: {str(e)}", className="error-message"), {'display': 'none'}
-    return "", {'display': 'none'}
+            return html.Div(f"Error connecting to server: {str(e)}", className="error-message"), {'display': 'none'}, {'display': 'block'}, None
+    
+    # Logic for logout
+    if triggered_id == "logout-button" and logout_clicks > 0:
+        return html.Div("You have been logged out.", className="success-message"), {'display': 'none'}, {'display': 'block'}, None
+    
+    # Handle case where the user is already logged in
+    if auth_data and "user_id" in auth_data:
+        return "", {'display': 'block'}, {'display': 'none'}, auth_data
+    
+    # If no action is triggered, show login form
+    return "", {'display': 'none'}, {'display': 'block'}, None
+
 
 # Callback for adding product
 @app.callback(
@@ -127,6 +162,7 @@ def add_product_and_hide_message(n_clicks, n_intervals, name, description, price
         return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, []
 
     return dash.no_update
+
 
 if __name__ == "__main__":
     app.run_server(debug=True)

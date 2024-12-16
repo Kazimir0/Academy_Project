@@ -35,7 +35,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 
-# 2. Modelul User
+# 6. User Model
 class User(Base):
     __tablename__ = "users"
 
