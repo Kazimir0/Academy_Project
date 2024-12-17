@@ -2,6 +2,8 @@ import base64
 import dash
 from dash import dcc, html, Input, Output, State
 import requests
+import pandas as pd
+from dash.dash_table import DataTable  # Import DataTable for displaying table
 from navbar import create_navbar
 
 # Initialize the Dash app
@@ -12,16 +14,16 @@ API_BASE_URL = "http://127.0.0.1:8000"  # FastAPI endpoint
 # Layout
 app.layout = html.Div([
 
-    # Navbar Section (imported from navbar.py)
-    create_navbar(),
+    # Navbar Section (initially hidden)
+    html.Div(create_navbar(), id="navbar", style={"display": "none"}),
 
-    # Header
-    html.H1("Product Management Dashboard", className="header"),
+    # Header (initially hidden)
+    html.H1("Product Management Dashboard", id="dashboard-header", className="header", style={"display": "none"}),
 
     # Store the authentication status
     dcc.Store(id="auth-store", storage_type="session"),
 
-    # Form Login (hidden after login)
+    # Form Login (visible initially)
     html.Div([ 
         html.H2("Login", className="section-header"),
         html.Label("Username:", className="form-label"),
@@ -49,7 +51,7 @@ app.layout = html.Div([
         html.Button("Add Product", id="add-product-button", n_clicks=0, className="btn"),
     ], className="form-section", style={'display': 'none'}),
 
-    # Placeholder for product list
+    # Placeholder for product list (Table of products)
     html.Div(id="product-list", children=[], className="product-list"),
 
     # Container for success or error messages
@@ -59,65 +61,15 @@ app.layout = html.Div([
     dcc.Interval(id="hide-message", interval=3000, n_intervals=0),
 ])
 
-
-# Combined callback for login and logout actions
+# Combined callback for login, product listing, and product addition
 @app.callback(
     [
         Output("login-message", "children"),
         Output("product-form-section", "style"),
         Output("login-form", "style"),
-        Output("auth-store", "data")
-    ],
-    [
-        Input("login-button", "n_clicks"),
-        Input("logout-button", "n_clicks"),
-    ],
-    [
-        State("login-username", "value"),
-        State("login-password", "value"),
-        State("auth-store", "data"),
-    ]
-)
-def manage_login_logout(login_clicks, logout_clicks, username, password, auth_data):
-    # Ensure clicks are integers (defaulting to 0 if None)
-    login_clicks = login_clicks or 0
-    logout_clicks = logout_clicks or 0
-
-    # Check which button was clicked
-    triggered_id = dash.callback_context.triggered_id
-    
-    # Logic for login
-    if triggered_id == "login-button" and login_clicks > 0:
-        if not username or not password:
-            return html.Div("Please enter both username and password.", className="error-message"), {'display': 'none'}, {'display': 'block'}, None
-        
-        try:
-            response = requests.post(f"{API_BASE_URL}/login/", data={"username": username, "password": password})
-            if response.status_code == 200:
-                # Successful login
-                user_data = response.json()
-                user_id = user_data.get("user_id")
-                return html.Div(f"Login successful! User ID: {user_id}", className="success-message"), {'display': 'block'}, {'display': 'none'}, {"user_id": user_id}
-            else:
-                return html.Div("Invalid username or password.", className="error-message"), {'display': 'none'}, {'display': 'block'}, None
-        except requests.exceptions.RequestException as e:
-            return html.Div(f"Error connecting to server: {str(e)}", className="error-message"), {'display': 'none'}, {'display': 'block'}, None
-    
-    # Logic for logout
-    if triggered_id == "logout-button" and logout_clicks > 0:
-        return html.Div("You have been logged out.", className="success-message"), {'display': 'none'}, {'display': 'block'}, None
-    
-    # Handle case where the user is already logged in
-    if auth_data and "user_id" in auth_data:
-        return "", {'display': 'block'}, {'display': 'none'}, auth_data
-    
-    # If no action is triggered, show login form
-    return "", {'display': 'none'}, {'display': 'block'}, None
-
-
-# Callback for adding product
-@app.callback(
-    [
+        Output("navbar", "style"),
+        Output("dashboard-header", "style"),
+        Output("auth-store", "data"),
         Output("product-list", "children"),
         Output("product-name", "value"),
         Output("product-description", "value"),
@@ -126,8 +78,16 @@ def manage_login_logout(login_clicks, logout_clicks, username, password, auth_da
         Output("product-image", "filename"),
         Output("message-container", "children"),
     ],
-    [Input("add-product-button", "n_clicks"), Input("hide-message", "n_intervals")],
     [
+        Input("login-button", "n_clicks"),
+        Input("logout-button", "n_clicks"),
+        Input("add-product-button", "n_clicks"),
+        Input("hide-message", "n_intervals"),
+    ],
+    [
+        State("login-username", "value"),
+        State("login-password", "value"),
+        State("auth-store", "data"),
         State("product-name", "value"),
         State("product-description", "value"),
         State("product-price", "value"),
@@ -136,17 +96,75 @@ def manage_login_logout(login_clicks, logout_clicks, username, password, auth_da
         State("message-container", "children"),
     ]
 )
-def add_product_and_hide_message(n_clicks, n_intervals, name, description, price, image_contents, image_filename, current_message):
-    if n_clicks > 0:
+def manage_login_logout_and_product_addition(
+    login_clicks, logout_clicks, add_product_clicks, hide_message_clicks,
+    username, password, auth_data, name, description, price, image_contents, image_filename, current_message
+):
+    # Ensure clicks are integers (defaulting to 0 if None)
+    login_clicks = login_clicks or 0
+    logout_clicks = logout_clicks or 0
+    add_product_clicks = add_product_clicks or 0
+    hide_message_clicks = hide_message_clicks or 0
+
+    triggered_id = dash.callback_context.triggered_id
+
+    # Handle login logic
+    if triggered_id == "login-button" and login_clicks > 0:
+        if not username or not password:
+            return (
+                "Please enter both username and password.", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
+                name, description, price, image_contents, image_filename, current_message
+            )
+        try:
+            response = requests.post(f"{API_BASE_URL}/login/", data={"username": username, "password": password})
+            if response.status_code == 200:
+                # Successful login
+                user_data = response.json()
+                user_id = user_data.get("user_id")
+
+                # Fetch the product data here
+                products_response = requests.get(f"{API_BASE_URL}/products/")
+                if products_response.status_code == 200:
+                    products = products_response.json()
+                    product_table = create_product_table(products)
+                else:
+                    product_table = html.Div("Error loading product data.", className="error-message")
+
+                return (
+                    f"Login successful! User ID: {user_id}", 
+                    {'display': 'block'}, {'display': 'none'}, {'display': 'block'}, {'display': 'block'},
+                    {"user_id": user_id}, product_table,
+                    "", "", 0, None, "", []
+                )
+            else:
+                return (
+                    "Invalid username or password.", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
+                    name, description, price, image_contents, image_filename, current_message
+                )
+        except requests.exceptions.RequestException as e:
+            return (
+                f"Error connecting to server: {str(e)}", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
+                name, description, price, image_contents, image_filename, current_message
+            )
+
+    # Handle logout logic
+    if triggered_id == "logout-button" and logout_clicks > 0:
+        return (
+            "You have been logged out.", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
+            name, description, price, image_contents, image_filename, current_message
+        )
+
+    # Handle product addition logic
+    if triggered_id == "add-product-button" and add_product_clicks > 0:
         if not all([name, description, price, image_contents]):
             return dash.no_update, name, description, price, image_contents, image_filename, html.Div("Please fill in all fields and upload an image.", className="error-message")
-
+        
         try:
             header, base64_image = image_contents.split(",")
             image_data = base64.b64decode(base64_image)
         except Exception as e:
             return dash.no_update, name, description, price, image_contents, image_filename, html.Div(f"Error decoding image: {str(e)}", className="error-message")
-
+        
         files = {"image": (image_filename, image_data)}
         data = {"name": name, "description": description, "price": float(price)}
 
@@ -158,11 +176,28 @@ def add_product_and_hide_message(n_clicks, n_intervals, name, description, price
         except requests.exceptions.RequestException as e:
             return dash.no_update, name, description, price, image_contents, image_filename, html.Div(f"Error adding product: {str(e)}", className="error-message")
 
-    if n_intervals > 0 and current_message:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, []
+    if hide_message_clicks > 0 and current_message:
+        return dash.no_update
 
     return dash.no_update
 
+
+# Function to create the product table from fetched data
+def create_product_table(products):
+    # Convert the product data into a DataFrame
+    if not products:
+        return html.Div("No products found.", className="error-message")
+
+    df = pd.DataFrame(products)
+    return html.Div([
+        DataTable(
+            id="product-table",
+            columns=[{"name": col, "id": col} for col in df.columns],
+            data=df.to_dict("records"),
+            style_table={'overflowX': 'auto'},
+            style_cell={'textAlign': 'left', 'padding': '5px'},
+        )
+    ])
 
 if __name__ == "__main__":
     app.run_server(debug=True)
