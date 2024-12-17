@@ -2,3 +2,4 @@
 __pycache__/
 venv/
 install-poetry.py
+migrate_passwords.py
