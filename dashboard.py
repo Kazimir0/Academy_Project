@@ -69,7 +69,7 @@ app.layout = html.Div([
         Output("login-form", "style"),
         Output("navbar", "style"),
         Output("dashboard-header", "style"),
-        Output("auth-store", "data"),
+        Output("auth-store", "data"),  # Output pentru stocarea datelor de autentificare
         Output("product-list", "children"),
         Output("product-name", "value"),
         Output("product-description", "value"),
@@ -80,7 +80,6 @@ app.layout = html.Div([
     ],
     [
         Input("login-button", "n_clicks"),
-        Input("logout-button", "n_clicks"),
         Input("add-product-button", "n_clicks"),
         Input("hide-message", "n_intervals"),
     ],
@@ -96,98 +95,108 @@ app.layout = html.Div([
         State("message-container", "children"),
     ]
 )
-def manage_login_logout_and_product_addition(
-    login_clicks, logout_clicks, add_product_clicks, hide_message_clicks,
+def manage_login_and_product_actions(
+    login_clicks, add_product_clicks, hide_message_clicks,
     username, password, auth_data, name, description, price, image_contents, image_filename, current_message
 ):
-    # Ensure clicks are integers (defaulting to 0 if None)
     login_clicks = login_clicks or 0
-    logout_clicks = logout_clicks or 0
     add_product_clicks = add_product_clicks or 0
     hide_message_clicks = hide_message_clicks or 0
-
     triggered_id = dash.callback_context.triggered_id
 
-    # Handle login logic
     if triggered_id == "login-button" and login_clicks > 0:
         if not username or not password:
             return (
-                "Please enter both username and password.", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
-                name, description, price, image_contents, image_filename, current_message
+                "Please enter both username and password.", {'display': 'none'}, {'display': 'block'},
+                {'display': 'none'}, {'display': 'none'}, None, [], "", "", 0, None, "", []
             )
         try:
             response = requests.post(f"{API_BASE_URL}/login/", data={"username": username, "password": password})
             if response.status_code == 200:
-                # Successful login
                 user_data = response.json()
                 user_id = user_data.get("user_id")
-
-                # Fetch the product data here
-                products_response = requests.get(f"{API_BASE_URL}/products/")
+                products_response = requests.get(f"{API_BASE_URL}/products/")  # Get products
                 if products_response.status_code == 200:
                     products = products_response.json()
                     product_table = create_product_table(products)
                 else:
                     product_table = html.Div("Error loading product data.", className="error-message")
-
                 return (
-                    f"Login successful! User ID: {user_id}", 
-                    {'display': 'block'}, {'display': 'none'}, {'display': 'block'}, {'display': 'block'},
-                    {"user_id": user_id}, product_table,
+                    f"Login successful! User ID: {user_id}", {'display': 'block'}, {'display': 'none'},
+                    {'display': 'block'}, {'display': 'block'}, {"user_id": user_id}, product_table,
                     "", "", 0, None, "", []
                 )
             else:
                 return (
-                    "Invalid username or password.", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
-                    name, description, price, image_contents, image_filename, current_message
+                    "Invalid username or password.", {'display': 'none'}, {'display': 'block'},
+                    {'display': 'none'}, {'display': 'none'}, None, [], "", "", 0, None, "", []
                 )
         except requests.exceptions.RequestException as e:
             return (
-                f"Error connecting to server: {str(e)}", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
-                name, description, price, image_contents, image_filename, current_message
+                f"Error connecting to server: {str(e)}", {'display': 'none'}, {'display': 'block'},
+                {'display': 'none'}, {'display': 'none'}, None, [], "", "", 0, None, "", []
             )
 
-    # Handle logout logic
-    if triggered_id == "logout-button" and logout_clicks > 0:
-        return (
-            "You have been logged out.", {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, None, [], 
-            name, description, price, image_contents, image_filename, current_message
-        )
-
-    # Handle product addition logic
     if triggered_id == "add-product-button" and add_product_clicks > 0:
-        if not all([name, description, price, image_contents]):
-            return dash.no_update, name, description, price, image_contents, image_filename, html.Div("Please fill in all fields and upload an image.", className="error-message")
+        if not name or not description or not price or not image_contents:
+            # If any field is empty, show error message
+            return dash.no_update, {'display': 'block'}, {'display': 'none'}, {'display': 'block'}, {'display': 'block'}, \
+                None, [], name, description, price, image_contents, image_filename, \
+                html.Div("All fields need to be completed", className="error-message")
         
         try:
+            # Handling image encoding
             header, base64_image = image_contents.split(",")
             image_data = base64.b64decode(base64_image)
         except Exception as e:
-            return dash.no_update, name, description, price, image_contents, image_filename, html.Div(f"Error decoding image: {str(e)}", className="error-message")
-        
+            return dash.no_update, name, description, price, image_contents, image_filename, \
+                html.Div(f"Error decoding image: {str(e)}", className="error-message")
+
         files = {"image": (image_filename, image_data)}
         data = {"name": name, "description": description, "price": float(price)}
 
         try:
             response = requests.post(f"{API_BASE_URL}/products/", data=data, files=files)
             response.raise_for_status()
-            success_message = html.Div("Product added successfully!", className="success-message")
-            return dash.no_update, "", "", 0, None, "", success_message
+            products_response = requests.get(f"{API_BASE_URL}/products/")  # Get the updated product list
+            products = products_response.json() if products_response.status_code == 200 else []
+            product_table = create_product_table(products)
+            return (
+                "", {'display': 'block'}, {'display': 'none'}, {'display': 'block'}, {'display': 'block'},
+                auth_data, product_table, "", "", 0, None, "", html.Div("Product added successfully!", className="success-message")
+            )
         except requests.exceptions.RequestException as e:
-            return dash.no_update, name, description, price, image_contents, image_filename, html.Div(f"Error adding product: {str(e)}", className="error-message")
+            return dash.no_update, name, description, price, image_contents, image_filename, \
+                html.Div(f"Error adding product: {str(e)}", className="error-message")
 
-    if hide_message_clicks > 0 and current_message:
-        return dash.no_update
+    if triggered_id == "hide-message" and current_message:
+        return "", dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, \
+            "", "", 0, None, "", ""
 
+    # Return the current values to preserve text in the input fields
     return dash.no_update
 
 
-# Function to create the product table from fetched data
+
 def create_product_table(products):
-    # Convert the product data into a DataFrame
     if not products:
         return html.Div("No products found.", className="error-message")
+    df = pd.DataFrame(products)
+    return html.Div([
+        DataTable(
+            id="product-table",
+            columns=[{"name": col, "id": col} for col in df.columns],
+            data=df.to_dict("records"),
+            style_table={'overflowX': 'auto'},
+            style_cell={'textAlign': 'left', 'padding': '5px'},
+        )
+    ])
 
+if __name__ == "__main__":
+    app.run_server(debug=True)
+def create_product_table(products):
+    if not products:
+        return html.Div("No products found.", className="error-message")
     df = pd.DataFrame(products)
     return html.Div([
         DataTable(
